@@ -1,114 +1,101 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- * @flow strict-local
- */
+import React from 'react'
+import {StatusBar} from 'react-native'
+import {connect} from 'react-redux'
+import Actions from './src/actions'
+import Navigation from './src/navigation'
+import {Colors} from './src/themes'
+import SomeModal from './src/components/SomeModal'
+import {Consts, Storage} from './src/utils'
+import NetInfo from '@react-native-community/netinfo'
+import SplashScreen from 'react-native-splash-screen'
+import {Provider} from 'react-native-paper'
 
-import React from 'react';
-import {
-  SafeAreaView,
-  StyleSheet,
-  ScrollView,
-  View,
-  Text,
-  StatusBar,
-} from 'react-native';
+class App extends React.Component {
 
-import {
-  Header,
-  LearnMoreLinks,
-  Colors,
-  DebugInstructions,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+  state = {
+    loading: true
+  }
 
-const App: () => React$Node = () => {
-  return (
-    <>
-      <StatusBar barStyle="dark-content" />
-      <SafeAreaView>
-        <ScrollView
-          contentInsetAdjustmentBehavior="automatic"
-          style={styles.scrollView}>
-          <Header />
-          {global.HermesInternal == null ? null : (
-            <View style={styles.engine}>
-              <Text style={styles.footer}>Engine: Hermes</Text>
-            </View>
-          )}
-          <View style={styles.body}>
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Step One</Text>
-              <Text style={styles.sectionDescription}>
-                Edit <Text style={styles.highlight}>App.js</Text> to change this
-                screen and then come back to see your edits.
-              </Text>
-            </View>
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>See Your Changes</Text>
-              <Text style={styles.sectionDescription}>
-                <ReloadInstructions />
-              </Text>
-            </View>
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Debug</Text>
-              <Text style={styles.sectionDescription}>
-                <DebugInstructions />
-              </Text>
-            </View>
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Learn More</Text>
-              <Text style={styles.sectionDescription}>
-                Read the docs to discover what to do next:
-              </Text>
-            </View>
-            <LearnMoreLinks />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </>
-  );
-};
+  componentDidMount() {
 
-const styles = StyleSheet.create({
-  scrollView: {
-    backgroundColor: Colors.lighter,
-  },
-  engine: {
-    position: 'absolute',
-    right: 0,
-  },
-  body: {
-    backgroundColor: Colors.white,
-  },
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: Colors.black,
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-    color: Colors.dark,
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-  footer: {
-    color: Colors.dark,
-    fontSize: 12,
-    fontWeight: '600',
-    padding: 4,
-    paddingRight: 12,
-    textAlign: 'right',
-  },
-});
+    const {networkSuccess, networkFailure} = this.props
 
-export default App;
+    this.networkSubscribe = NetInfo.addEventListener(state => {
+      if(state.isConnected) networkSuccess()
+      else networkFailure()
+    })
+
+    NetInfo.fetch().then(state => {
+      if(state.isConnected) networkSuccess()
+      else networkFailure()
+    })
+
+    this.createLocalDBs().then(this.checkUser)
+
+    SplashScreen.hide()
+  }
+
+  componentWillUnmount = () => this.networkSubscribe()
+
+  checkUser = async () => {
+    const {setUser, login} = this.props
+
+    let userData = await Storage.doLoad(Consts.db.user)
+
+    if(userData) {
+      setUser(userData)
+      login()
+    }
+
+    this.setState({loading:false})
+  }
+
+  createLocalDBs = async () => {
+    try {
+      await Storage.doLoad(Consts.db.app)
+    }
+    catch(err) {
+      if(err.name === 'NotFoundError') await Storage.doSave(Consts.db.app)
+    }
+
+    try {
+      await Storage.doLoad(Consts.db.user)
+    }
+    catch(err) {
+      if(err.name === 'NotFoundError') await Storage.doSave(Consts.db.user, null)
+    }
+  }
+
+  render() {
+
+    const {loading} = this.state
+
+    return (
+      <Provider>
+        {!loading &&
+        <>
+          <StatusBar backgroundColor={Colors.brand} />
+          <Navigation />
+          <SomeModal />
+        </>
+        }
+      </Provider>
+    )
+  }
+}
+
+const mapStateToProps = state => ({
+  isConnected: state.network.isConnected,
+  isLoggedIn: state.auth.isLoggedIn,
+  user: state.user.data
+})
+
+const mapDispatchToProps = dispatch => ({
+  login: () => dispatch(Actions.Creators.login()),
+  logout: () => dispatch(Actions.Creators.logout()),
+  setUser: user => dispatch(Actions.Creators.setUser(user)),
+  networkSuccess: () => dispatch(Actions.Creators.networkSuccess()),
+  networkFailure: () => dispatch(Actions.Creators.networkFailure())
+})
+
+export default connect(mapStateToProps, mapDispatchToProps)(App)
